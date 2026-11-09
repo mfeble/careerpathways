@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drag the Words</title>
+<style>
+  /* ===== THEME: change these colors to match your course ===== */
+  :root {
+    --accent: #4338ca;
+    --accent-soft: #eef2ff;
+    --accent-ring: rgba(67, 56, 202, .25);
+    --text: #1f2937;
+    --muted: #5b6472;
+    --border: #cbd2dc;
+    --surface: #f7f8fa;
+    --bg: #ffffff;
+    --correct: #15803d;
+    --correct-soft: #dcfce7;
+    --wrong: #b91c1c;
+    --wrong-soft: #fee2e2;
+    --radius: 10px;
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 17px; line-height: 1.5; }
+  body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select: none; -webkit-user-select: none; }
+
+  .dtw { max-width: 780px; margin: 0 auto; padding: 20px 16px 28px; }
+  h1 { font-size: 1.35rem; margin: 0 0 .3rem; line-height: 1.3; }
+  .instructions { color: var(--muted); margin: 0 0 1.1rem; }
+
+  .bank-label { font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 .4rem; }
+  .bank {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    min-height: 60px; padding: 12px; margin-bottom: 1.4rem;
+    background: var(--surface); border: 2px solid var(--border); border-radius: var(--radius);
+    transition: border-color .15s, background-color .15s;
+  }
+  .bank.drop-hover { border-color: var(--accent); background: var(--accent-soft); }
+  .bank-empty { color: var(--muted); font-size: .9rem; font-style: italic; }
+
+  .chip {
+    font: inherit; font-size: .95rem; line-height: 1.4;
+    padding: .32em .85em; margin: 0;
+    background: #fff; color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.07);
+    cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+    transition: border-color .12s, box-shadow .12s, opacity .12s;
+  }
+  .chip:hover { border-color: var(--accent); }
+  .chip.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip.is-source { opacity: .3; }
+  .chip:disabled { cursor: default; opacity: .6; }
+  .bank-return {
+    font: inherit; font-size: .9rem; padding: .32em .85em;
+    background: transparent; color: var(--accent);
+    border: 2px dashed var(--accent); border-radius: 8px; cursor: pointer;
+  }
+
+  .ghost {
+    position: fixed; z-index: 1000; pointer-events: none; margin: 0;
+    box-shadow: 0 10px 24px rgba(0,0,0,.2); transform: rotate(-2deg);
+    border-color: var(--accent);
+  }
+
+  .passage p { margin: 0 0 1rem; line-height: 2.35; }
+  .blank {
+    font: inherit; font-size: .95rem; line-height: 1.4; min-height: 1.95em;
+    display: inline-block; vertical-align: baseline; white-space: normal;
+    min-width: 9em; max-width: 100%; padding: .2em .6em; margin: 0 .12em;
+    background: #fff; color: var(--text); text-align: center;
+    border: 2px dashed var(--border); border-radius: 8px;
+    cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
+    transition: border-color .12s, background-color .12s, box-shadow .12s;
+  }
+  .blank:hover, .blank.target-ready { border-color: var(--accent); }
+  .blank.filled { border-style: solid; border-color: var(--accent); background: var(--accent-soft); cursor: grab; }
+  .blank.selected { background: var(--accent); color: #fff; }
+  .blank.is-source { opacity: .4; }
+  .blank.drop-hover { border-style: solid; border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 4px var(--accent-ring); }
+  .blank.correct { border-color: var(--correct); background: var(--correct-soft); color: var(--correct); font-weight: 600; }
+  .blank.incorrect { border-color: var(--wrong); background: var(--wrong-soft); color: var(--wrong); text-decoration: line-through; }
+  .blank.correct::after { content: " \2713"; }
+  .blank.incorrect::after { content: " \2717"; display: inline-block; text-decoration: none; margin-left: .25em; }
+  .blank:disabled { cursor: default; }
+  .sol { display: none; font-size: .9rem; font-weight: 700; color: var(--correct); margin: 0 .2em 0 .1em; }
+  .sol.on { display: inline; }
+
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: .4rem; }
+  .btn {
+    font: inherit; font-size: .95rem; font-weight: 600;
+    padding: .55em 1.15em; border-radius: 8px; cursor: pointer;
+    background: var(--accent); color: #fff; border: 2px solid var(--accent);
+  }
+  .btn.secondary { background: #fff; color: var(--accent); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  .result { display: none; margin-top: 1rem; padding: 12px 14px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); }
+  .result.show { display: block; }
+  .result strong { font-size: 1.05rem; }
+  .meter { height: 8px; margin-top: 8px; background: #e5e7eb; border-radius: 99px; overflow: hidden; }
+  .meter span { display: block; height: 100%; width: 0; background: var(--correct); transition: width .4s ease; }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+  @media (max-width: 480px) {
+    html, body { font-size: 16px; }
+    .dtw { padding: 14px 12px 20px; }
+    .passage p { line-height: 2.5; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+    .ghost { transform: none; }
+  }
+</style>
+</head>
+<body>
+<main class="dtw">
+  <h1 id="title"></h1>
+  <p class="instructions" id="instructions"></p>
+
+  <p class="bank-label" id="bank-label">Word bank</p>
+  <div class="bank" id="bank" role="group" aria-labelledby="bank-label"></div>
+
+  <div class="passage" id="passage"></div>
+
+  <div class="controls">
+    <button type="button" class="btn" id="btn-check">Check</button>
+    <button type="button" class="btn secondary" id="btn-solution" disabled>Show answers</button>
+    <button type="button" class="btn secondary" id="btn-reset">Start over</button>
+  </div>
+
+  <div class="result" id="result" role="status" aria-live="polite"></div>
+  <div class="sr-only" id="live" aria-live="assertive"></div>
+</main>
+
+<script>
+/* =====================================================================
+   EDIT YOUR ACTIVITY HERE
+   - Wrap each answer in *asterisks*. Each one becomes a blank and a
+     word in the word bank.
+   - Leave an empty line between paragraphs.
+   - distractors: extra (wrong) words added to the bank. Use [] for none.
+   ===================================================================== */
+const CONFIG = {
+  title: "PWID Outcomes on the Job",
+  instructions: "Drag each term to the PWID outcome it fits best. Each outcome connects to a NACE competency (what employers call it) and a detailed work activity from the U.S. Department of Labor's job database (what people do on the job). You can also tap a term and then tap a blank. Select Check when you're done.",
+
+  text: `
+SLO 1, Writing, Rhetorical, and Genre Knowledge, builds the NACE competency *Communication* and shows up on the job as *Edit written materials*.
+
+SLO 2, Document and Information Design, draws on the knowledge area *Design* and shows up on the job as *Design layouts for print publications*.
+
+SLO 3, Digital and Multimedia Literacy, builds the NACE competency *Technology* and shows up on the job as *Update website content*.
+
+SLO 4, Research and Ethical Information Use, draws on the skill *Reading Comprehension* and shows up on the job as *Verify accuracy of data*.
+
+SLO 5, Professional and Workplace Readiness, builds the NACE competency *Teamwork* and shows up on the job as *Confer with clients to determine needs*.
+
+SLO 6, UX and Accessibility Awareness, builds the NACE competency *Equity & Inclusion* and shows up on the job as *Collect data about customer needs*.
+`,
+
+  distractors: [],
+
+  caseSensitive: false,
+
+  // Shown after Check. The first entry whose "min" percentage is met is used.
+  feedback: [
+    { min: 100, text: "Perfect! Every word is in the right place." },
+    { min: 70,  text: "Nice work. Review the ones marked in red and try again." },
+    { min: 0,   text: "Keep going. Check the incorrect answers and try again." }
+  ]
+};
+/* ===================================================================== */
+
+(function () {
+  "use strict";
+  const $ = (s) => document.querySelector(s);
+  const norm = (s) => {
+    s = String(s).trim().replace(/\s+/g, " ");
+    return CONFIG.caseSensitive ? s : s.toLowerCase();
+  };
+  const shuffle = (a) => {
+    a = a.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+
+  /* ---------- Parse the passage ---------- */
+  const blanks = [];
+  const paragraphs = CONFIG.text.trim().split(/\n\s*\n/).map((p) =>
+    p.split(/(\*[^*]+\*)/).filter(Boolean).map((seg) => {
+      if (/^\*[^*]+\*$/.test(seg)) {
+        const b = { id: blanks.length, answer: seg.slice(1, -1).trim() };
+        blanks.push(b);
+        return { blank: b.id };
+      }
+      return { text: seg.replace(/\s*\n\s*/g, " ") };
+    })
+  );
+  const words = blanks.map((b) => b.answer).concat(CONFIG.distractors || [])
+    .map((text, id) => ({ id, text }));
+
+  /* ---------- State ---------- */
+  let order = shuffle(words.map((w) => w.id));
+  let place = {};        // blankId -> wordId
+  let selected = null;   // wordId currently "picked up"
+  let marks = null;      // blankId -> true/false after Check
+  let solutionShown = false;
+
+  const where = (wid) => {
+    for (const b in place) if (place[b] === wid) return +b;
+    return null;
+  };
+
+  /* ---------- Build static DOM ---------- */
+  $("#title").textContent = CONFIG.title;
+  document.title = CONFIG.title;
+  $("#instructions").textContent = CONFIG.instructions;
+
+  const blankEls = [];
+  const solEls = [];
+  const passage = $("#passage");
+  paragraphs.forEach((parts) => {
+    const p = document.createElement("p");
+    parts.forEach((part) => {
+      if (part.text != null) {
+        p.appendChild(document.createTextNode(part.text));
+      } else {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "blank";
+        btn.dataset.blank = part.blank;
+        btn.dataset.key = "b" + part.blank;
+        blankEls[part.blank] = btn;
+        const sol = document.createElement("span");
+        sol.className = "sol";
+        sol.setAttribute("aria-hidden", "true");
+        solEls[part.blank] = sol;
+        p.appendChild(sol);
+        p.appendChild(btn);
+      }
+    });
+    passage.appendChild(p);
+  });
+
+  const live = $("#live");
+  function announce(msg) {
+    live.textContent = "";
+    requestAnimationFrame(() => { live.textContent = msg; });
+  }
+
+  /* ---------- Render ---------- */
+  function render(focusKey) {
+    const active = document.activeElement;
+    const activeKey = focusKey || (active && active.dataset ? active.dataset.key : null);
+
+    // Word bank
+    const bank = $("#bank");
+    bank.innerHTML = "";
+    const inBank = order.filter((id) => where(id) === null);
+    inBank.forEach((id) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "chip" + (selected === id ? " selected" : "");
+      btn.dataset.wordId = id;
+      btn.dataset.key = "w" + id;
+      btn.textContent = words[id].text;
+      btn.setAttribute("aria-pressed", selected === id ? "true" : "false");
+      btn.disabled = solutionShown;
+      bank.appendChild(btn);
+    });
+    if (selected !== null && where(selected) !== null) {
+      const ret = document.createElement("button");
+      ret.type = "button";
+      ret.className = "bank-return";
+      ret.dataset.key = "return";
+      ret.textContent = `Return “${words[selected].text}” here`;
+      bank.appendChild(ret);
+    } else if (!inBank.length) {
+      const s = document.createElement("span");
+      s.className = "bank-empty";
+      s.textContent = "All words placed.";
+      bank.appendChild(s);
+    }
+
+    // Blanks
+    blanks.forEach((b) => {
+      const el = blankEls[b.id];
+      const wid = place[b.id];
+      const filled = wid != null;
+      el.textContent = filled ? words[wid].text : "";
+      if (filled) el.dataset.wordId = wid; else delete el.dataset.wordId;
+      el.classList.toggle("filled", filled);
+      el.classList.toggle("selected", filled && selected === wid);
+      el.classList.toggle("target-ready", selected !== null && wid !== selected);
+      const mark = marks ? marks[b.id] : undefined;
+      el.classList.toggle("correct", mark === true);
+      el.classList.toggle("incorrect", mark === false && filled);
+      el.disabled = solutionShown;
+
+      const showSol = solutionShown && mark !== true;
+      solEls[b.id].textContent = showSol ? b.answer : "";
+      solEls[b.id].classList.toggle("on", showSol);
+
+      let label = `Blank ${b.id + 1} of ${blanks.length}, ` + (filled ? `contains ${words[wid].text}` : "empty");
+      if (mark === true) label += ", correct";
+      else if (mark === false) label += ", incorrect";
+      if (showSol) label += `. Correct answer: ${b.answer}`;
+      el.setAttribute("aria-label", label);
+    });
+
+    // Buttons
+    $("#btn-check").disabled = solutionShown;
+    $("#btn-solution").disabled = !marks || solutionShown || blanks.every((b) => marks[b.id]);
+
+    // Restore focus if the focused element was rebuilt
+    if (activeKey && (!document.body.contains(active) || focusKey)) {
+      const target = document.querySelector(`[data-key="${activeKey}"]`);
+      if (target && !target.disabled) target.focus();
+    }
+  }
+
+  /* ---------- Actions ---------- */
+  function invalidate() {
+    if (marks) {
+      marks = null;
+      $("#result").classList.remove("show");
+    }
+  }
+
+  function placeWord(wid, bid) {
+    const src = where(wid);
+    if (src === bid) return;
+    const prev = place[bid];
+    if (src !== null) {
+      if (prev != null) place[src] = prev; else delete place[src];
+    }
+    place[bid] = wid;
+    invalidate();
+    announce(`Placed “${words[wid].text}” in blank ${bid + 1}.` +
+      (prev != null && src === null ? ` “${words[prev].text}” returned to the word bank.` : ""));
+  }
+
+  function toBank(wid) {
+    const src = where(wid);
+    if (src === null) return;
+    delete place[src];
+    invalidate();
+    announce(`“${words[wid].text}” returned to the word bank.`);
+  }
+
+  function check() {
+    marks = {};
+    let score = 0;
+    blanks.forEach((b) => {
+      const wid = place[b.id];
+      const ok = wid != null && norm(words[wid].text) === norm(b.answer);
+      marks[b.id] = ok;
+      if (ok) score++;
+    });
+    selected = null;
+    const pct = Math.round((score / blanks.length) * 100);
+    const fb = (CONFIG.feedback || []).find((f) => pct >= f.min);
+    const res = $("#result");
+    res.innerHTML = "";
+    const strong = document.createElement("strong");
+    strong.textContent = `You got ${score} of ${blanks.length} correct.`;
+    res.appendChild(strong);
+    if (fb) {
+      const p = document.createElement("div");
+      p.textContent = fb.text;
+      res.appendChild(p);
+    }
+    const meter = document.createElement("div");
+    meter.className = "meter";
+    meter.setAttribute("aria-hidden", "true");
+    const bar = document.createElement("span");
+    meter.appendChild(bar);
+    res.appendChild(meter);
+    res.classList.add("show");
+    requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.width = pct + "%"; }));
+    render();
+  }
+
+  function showAnswers() {
+    solutionShown = true;
+    selected = null;
+    render();
+    announce("Correct answers are now shown next to each incorrect blank.");
+  }
+
+  function reset() {
+    place = {};
+    marks = null;
+    selected = null;
+    solutionShown = false;
+    order = shuffle(words.map((w) => w.id));
+    $("#result").classList.remove("show");
+    render();
+    announce("Activity reset.");
+    const first = document.querySelector(".chip");
+    if (first) first.focus();
+  }
+
+  $("#btn-check").addEventListener("click", check);
+  $("#btn-solution").addEventListener("click", showAnswers);
+  $("#btn-reset").addEventListener("click", reset);
+
+  /* ---------- Click / tap / keyboard ---------- */
+  let suppressClick = false;
+
+  document.addEventListener("click", (e) => {
+    if (suppressClick || solutionShown) return;
+
+    const chip = e.target.closest(".chip");
+    if (chip) {
+      const id = +chip.dataset.wordId;
+      selected = selected === id ? null : id;
+      announce(selected !== null ? `Selected “${words[id].text}”. Now choose a blank.` : "Selection cleared.");
+      render("w" + id);
+      return;
+    }
+
+    if (e.target.closest(".bank-return")) {
+      const wid = selected;
+      selected = null;
+      toBank(wid);
+      render("w" + wid);
+      return;
+    }
+
+    const blankEl = e.target.closest(".blank");
+    if (blankEl) {
+      const bid = +blankEl.dataset.blank;
+      if (selected !== null) {
+        if (place[bid] === selected) {
+          selected = null;
+          announce("Selection cleared.");
+        } else {
+          placeWord(selected, bid);
+          selected = null;
+        }
+      } else if (place[bid] != null) {
+        selected = place[bid];
+        announce(`Picked up “${words[selected].text}” from blank ${bid + 1}. Choose another blank, or return it to the word bank.`);
+      }
+      render("b" + bid);
+      return;
+    }
+
+    if (e.target.closest("#bank") && selected !== null && where(selected) !== null) {
+      const wid = selected;
+      selected = null;
+      toBank(wid);
+      render();
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && selected !== null) {
+      selected = null;
+      announce("Selection cleared.");
+      render();
+    }
+    if ((e.key === "Delete" || e.key === "Backspace") && !solutionShown) {
+      const blankEl = e.target.closest && e.target.closest(".blank");
+      if (blankEl && place[+blankEl.dataset.blank] != null) {
+        e.preventDefault();
+        if (selected === place[+blankEl.dataset.blank]) selected = null;
+        toBank(place[+blankEl.dataset.blank]);
+        render();
+      }
+    }
+  });
+
+  /* ---------- Drag and drop (mouse + touch + pen) ---------- */
+  let drag = null;
+
+  function dropTargetAt(x, y) {
+    const el = document.elementFromPoint(x, y);
+    if (!el) return null;
+    return el.closest(".blank") || el.closest("#bank");
+  }
+
+  function setHover(target) {
+    if (drag.hover === target) return;
+    if (drag.hover) drag.hover.classList.remove("drop-hover");
+    drag.hover = target;
+    if (target) target.classList.add("drop-hover");
+  }
+
+  document.addEventListener("pointerdown", (e) => {
+    if (solutionShown || e.button !== 0) return;
+    const el = e.target.closest("[data-word-id]");
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    drag = {
+      wid: +el.dataset.wordId, el, active: false, hover: null, ghost: null,
+      x0: e.clientX, y0: e.clientY, dx: e.clientX - r.left, dy: e.clientY - r.top, pid: e.pointerId
+    };
+  });
+
+  document.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.pid) return;
+    if (!drag.active) {
+      if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 6) return;
+      drag.active = true;
+      selected = null;
+      render();
+      const g = document.createElement("div");
+      g.className = "chip ghost";
+      g.textContent = words[drag.wid].text;
+      document.body.appendChild(g);
+      drag.ghost = g;
+      // Re-find the source element (render may have rebuilt it)
+      drag.el = document.querySelector(`[data-word-id="${drag.wid}"]`);
+      if (drag.el) drag.el.classList.add("is-source");
+      document.body.classList.add("is-dragging");
+    }
+    e.preventDefault();
+    drag.ghost.style.left = (e.clientX - drag.dx) + "px";
+    drag.ghost.style.top = (e.clientY - drag.dy) + "px";
+    setHover(dropTargetAt(e.clientX, e.clientY));
+
+    // Auto-scroll near the top/bottom edge (helps inside a short iframe)
+    const edge = 40;
+    if (e.clientY < edge) window.scrollBy(0, -12);
+    else if (e.clientY > window.innerHeight - edge) window.scrollBy(0, 12);
+  }, { passive: false });
+
+  function endDrag(e, cancelled) {
+    if (!drag || e.pointerId !== drag.pid) return;
+    const d = drag;
+    drag = null;
+    if (!d.active) return;   // it was a click/tap; let the click handler run
+
+    if (d.hover) d.hover.classList.remove("drop-hover");
+    if (d.ghost) d.ghost.remove();
+    if (d.el) d.el.classList.remove("is-source");
+    document.body.classList.remove("is-dragging");
+
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; }, 0);
+
+    if (!cancelled && d.hover) {
+      if (d.hover.classList.contains("blank")) {
+        const bid = +d.hover.dataset.blank;
+        placeWord(d.wid, bid);
+        render();
+        return;
+      }
+      if (d.hover.id === "bank") {
+        toBank(d.wid);
+      }
+    }
+    render();
+  }
+
+  document.addEventListener("pointerup", (e) => endDrag(e, false));
+  document.addEventListener("pointercancel", (e) => endDrag(e, true));
+
+  render();
+})();
+</script>
+</body>
+</html>
